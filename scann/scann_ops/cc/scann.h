@@ -60,6 +60,7 @@ class ScannInterface {
                                MutableSpan<NNResultsVector> res, int final_nn,
                                int pre_reorder_nn, int leaves) const;
   Status Serialize(std::string path);
+  int WriteIndex(std::string file_name, bool write_dataset = true);
   StatusOr<SingleMachineFactoryOptions> ExtractOptions();
 
   template <typename T_idx>

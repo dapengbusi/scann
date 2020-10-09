@@ -28,6 +28,44 @@
 namespace tensorflow {
 namespace scann_ops {
 
+static const std::string kProtoPrefix = "PROTO";
+static const std::string kDataSpanPrefix = "NUMDATA";
+static const std::string kConfigPbName = "scann_config";
+static const std::string kCodeBookPbName = "ah_codebook";
+static const std::string kSerializedPartitionerPbName = "serialized_partitioner";
+static const std::string kDataSetDataName = "dataset";
+static const std::string kDataPointDataName = "datapoint";
+static const std::string kHashedDataDataName = "hasheddata";
+
+static Status AppendProtobufToFile(const std::string& pb_name,
+                           google::protobuf::Message* message,
+                           std::ofstream* fout) {
+  std::string pb_str;
+  if (!message->SerializeToString(&pb_str)) {
+    return InternalError("Failed to write " + pb_name);
+  }
+
+  int length = pb_str.length();
+  std::string header = kProtoPrefix + ":" + pb_name + ":" + std::to_string(length) + "\n";
+  *fout << header;
+  *fout << pb_str;
+  *fout << "\n";
+  return OkStatus();
+}
+
+template <typename T>
+static Status AppendDataToFile(const std::string& data_name,
+                   ConstSpan<T> data,
+                   std::ofstream* fout) {
+  std::string header = kDataSpanPrefix + ":" + data_name + ":" + std::to_string(data.size()*sizeof(T)) + "\n";
+  *fout << header;
+  const char* ptr = reinterpret_cast<const char*>(data.data());
+  fout->write(ptr, data.size()*sizeof(T));
+  *fout << "\n";
+  return OkStatus();
+}
+
+
 Status ScannInterface::Initialize(ConstSpan<float> dataset,
                                   ConstSpan<int32_t> datapoint_to_token,
                                   ConstSpan<uint8_t> hashed_dataset,
@@ -240,6 +278,52 @@ Status ScannInterface::Serialize(std::string path) {
         DatasetToNumpy(path + "/hashed_dataset.npy", *(opts.hashed_dataset)));
   }
   return OkStatus();
+}
+
+int ScannInterface::WriteIndex(std::string filename, bool write_dataset) {
+  try {
+    std::ofstream file(filename, std::ofstream::binary);
+    if (!file) {
+      LOG(ERROR) << "write index error, file: " << filename;
+      return -1;
+    }
+
+    auto options_status = scann_->ExtractSingleMachineFactoryOptions();
+
+    if (!options_status.ok()) {
+      LOG(ERROR) << "get scan options error";
+      return -1;
+    }
+
+    auto opts = options_status.ValueOrDie();
+    AppendProtobufToFile(kConfigPbName, &(config_), &file);
+    if (opts.ah_codebook != nullptr)
+      AppendProtobufToFile(kCodeBookPbName, opts.ah_codebook.get(), &file);
+    if (opts.serialized_partitioner != nullptr)
+      AppendProtobufToFile(kSerializedPartitionerPbName, opts.serialized_partitioner.get(), &file);
+    if (opts.datapoints_by_token != nullptr) {
+      vector<int32_t> datapoint_to_token(n_points_);
+      for (const auto& [token_idx, dps] : Enumerate(*opts.datapoints_by_token))
+        for (auto dp_idx : dps) datapoint_to_token[dp_idx] = token_idx;
+
+      AppendDataToFile(kDataPointDataName, ConstSpan<int32_t>(datapoint_to_token.data(), datapoint_to_token.size()), &file);
+    }
+    if (opts.hashed_dataset != nullptr) {
+      AppendDataToFile(kHashedDataDataName, ConstSpan<uint8_t>((*opts.hashed_dataset).data()), &file);
+    }
+    if (write_dataset) {
+      auto data = down_cast<const DenseDataset<float>*>(scann_->dataset())->data();
+      if (data.empty()) {
+        LOG(ERROR) << "can not get dataset";
+      } else {
+        AppendDataToFile(kDataSetDataName, data, &file);
+      }
+    }
+  } catch (std::exception &e) {
+    LOG(ERROR) << "Scann exception: " << e.what();
+    return -1;
+  }
+  return 0;
 }
 
 StatusOr<SingleMachineFactoryOptions> ScannInterface::ExtractOptions() {

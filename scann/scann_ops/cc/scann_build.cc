@@ -68,44 +68,6 @@ static void RuntimeErrorIfNotOk(const char* prefix, const Status& status) {
   }
 }
 
-static const std::string kProtoPrefix = "PROTO";
-static const std::string kDataSpanPrefix = "NUMDATA";
-static const std::string kConfigPbName = "scann_config";
-static const std::string kCodeBookPbName = "ah_codebook";
-static const std::string kSerializedPartitionerPbName = "serialized_partitioner";
-static const std::string kDataSetDataName = "dataset";
-static const std::string kDataPointDataName = "datapoint";
-static const std::string kHashedDataDataName = "hasheddata";
-
-static Status AppendProtobufToFile(const std::string& pb_name,
-                           google::protobuf::Message* message,
-                           std::ofstream* fout) {
-  std::string pb_str;
-  if (!message->SerializeToString(&pb_str)) {
-    return InternalError("Failed to write " + pb_name);
-  }
-
-  int length = pb_str.length();
-  std::string header = kProtoPrefix + ":" + pb_name + ":" + std::to_string(length) + "\n";
-  *fout << header;
-  *fout << pb_str;
-  *fout << "\n";
-  return OkStatus();
-}
-
-template <typename T>
-static Status AppendDataToFile(const std::string& data_name,
-                   ConstSpan<T> data,
-                   std::ofstream* fout) {
-  std::string header = kDataSpanPrefix + ":" + data_name + ":" + std::to_string(data.size()*sizeof(T)) + "\n";
-  *fout << header;
-  const char* ptr = reinterpret_cast<const char*>(data.data());
-  fout->write(ptr, data.size()*sizeof(T));
-  *fout << "\n";
-  return OkStatus();
-}
-
-
 ScannExt::ScannExt() {
   scann_ = std::make_shared<ScannInterface>();
 }
@@ -220,40 +182,7 @@ void ScannExt::BuildIndex(const std::vector<float>& dataset, int dimensionality,
 }
 
 int ScannExt::WriteIndex(const char* filename) {
-  try {
-    std::ofstream file(filename, std::ofstream::binary);
-    if (!file) {
-      LOG(ERROR) << "write index error, file: " << filename;
-      return -1;
-    }
-    auto options_status = scann_->scann_->ExtractSingleMachineFactoryOptions();
-
-    if (!options_status.ok()) {
-      LOG(ERROR) << "get scan options error";
-      return -1;
-    }
-    auto opts = options_status.ValueOrDie();
-
-    AppendProtobufToFile(kConfigPbName, &(scann_->config_), &file);
-    if (opts.ah_codebook != nullptr)
-      AppendProtobufToFile(kCodeBookPbName, opts.ah_codebook.get(), &file);
-    if (opts.serialized_partitioner != nullptr)
-      AppendProtobufToFile(kSerializedPartitionerPbName, opts.serialized_partitioner.get(), &file);
-    if (opts.datapoints_by_token != nullptr) {
-      vector<int32_t> datapoint_to_token(scann_->n_points_);
-      for (const auto& [token_idx, dps] : Enumerate(*opts.datapoints_by_token))
-        for (auto dp_idx : dps) datapoint_to_token[dp_idx] = token_idx;
-
-      AppendDataToFile(kDataPointDataName, ConstSpan<int32_t>(datapoint_to_token.data(), datapoint_to_token.size()), &file);
-    }
-    if (opts.hashed_dataset != nullptr) {
-      AppendDataToFile(kHashedDataDataName, ConstSpan<uint8_t>((*opts.hashed_dataset).data()), &file);
-    }
-  } catch (std::exception &e) {
-    LOG(ERROR) << "Scann exception: " << e.what();
-    return -1;
-  }
-  return 0;
+  return scann_->WriteIndex(std::string(filename));
 }
 
 
