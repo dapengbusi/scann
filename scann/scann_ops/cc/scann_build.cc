@@ -97,7 +97,7 @@ void ScannExt::BuildIndex(const std::vector<float>& dataset, int dimensionality,
     scann_conf.mutable_partitioning()->set_min_cluster_size(50);
     scann_conf.mutable_partitioning()->mutable_partitioning_distance()->set_distance_measure("SquaredL2Distance");
     scann_conf.mutable_partitioning()->mutable_query_spilling()->set_spilling_type(QuerySpillingConfig::FIXED_NUMBER_OF_CENTERS);
-    scann_conf.mutable_partitioning()->mutable_query_spilling()->set_max_spill_centers(100);
+    scann_conf.mutable_partitioning()->mutable_query_spilling()->set_max_spill_centers(1000);
     scann_conf.mutable_partitioning()->set_partitioning_type(PartitioningConfig::GENERIC);
     scann_conf.mutable_partitioning()->mutable_query_tokenization_distance_override()->set_distance_measure("DotProductDistance");
     scann_conf.mutable_partitioning()->set_query_tokenization_type(PartitioningConfig::FLOAT);
@@ -168,7 +168,7 @@ void ScannExt::BuildIndex(const std::vector<float>& dataset, int dimensionality,
   if (conf_map.count("nprobe")) {
     nprobe_ = std::atoi(conf_map["nprobe"].c_str());
     scann_conf.mutable_partitioning()->mutable_query_spilling()->set_max_spill_centers(nprobe_);
-    scann_conf.set_num_neighbors(nprobe_);
+    scann_conf.set_num_neighbors(500);
   }
   if (conf_map.count("train_thread_num")) {
     training_thread_num_ = atoi(conf_map["train_thread_num"].c_str());
@@ -177,7 +177,6 @@ void ScannExt::BuildIndex(const std::vector<float>& dataset, int dimensionality,
   LOG(ERROR) << "scann config: " << scann_conf.DebugString();
   ConstSpan<float> ds_span = absl::MakeConstSpan(dataset);
   auto status = scann_->Initialize(ds_span, dimensionality, scann_conf, training_thread_num_);
-  LOG(INFO) << status;
   return;
 }
 
