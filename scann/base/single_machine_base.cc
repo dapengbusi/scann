@@ -707,6 +707,24 @@ bool SingleMachineSearcherBase<T>::fixed_point_reordering_enabled() const {
           absl::StartsWith(reordering_helper_->name(), "FixedPoint"));
 }
 
+template <typename T>
+bool SingleMachineSearcherBase<T>::AddDatasetWithIds(const TypedDataset<T>& dataset, const TypedDataset<uint8_t>& hashed_dataset, const std::vector<std::string>& ids, const ScannConfig& config) {
+  auto mutable_dataset_ptr = mutable_dataset();
+  if (mutable_dataset_ptr) {
+    for (auto i = 0; i < dataset.size(); i++) {
+      mutable_dataset_ptr->AppendOrDie(dataset[i]);
+    }
+  }
+
+  auto mutable_hash = mutable_hashed_dataset();
+  if (mutable_hash) {
+    for (auto i = 0; i < hashed_dataset.size(); i++) {
+      mutable_hash->AppendOrDie(hashed_dataset[i]);
+    }
+  }
+  return AddDatasetWithIdsInternel(dataset, hashed_dataset, ids, config);
+}
+
 SCANN_INSTANTIATE_TYPED_CLASS(, SingleMachineSearcherBase);
 
 }  // namespace scann_ops

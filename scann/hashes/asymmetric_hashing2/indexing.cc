@@ -210,6 +210,7 @@ SCANN_INLINE void ReconstructProductQuantized(
   FloatT* __restrict result_ptr = reconstructed.data();
   const FloatT* __restrict src_ptr = flattend_model.data();
   const uint8_t* input_ptr = input.data();
+  LOG(INFO) << (int) *input_ptr;
 
   uint32_t subspace_size, center_size;
   for (const auto& subspace_info : subspace_sizes) {
@@ -317,6 +318,7 @@ fallback:
 template <typename T>
 Status Indexer<T>::Reconstruct(ConstSpan<uint8_t> input,
                                MutableSpan<FloatT> reconstructed) const {
+  LOG(INFO) << __LINE__ << "  input: " << input.size();
   if (model_->quantization_scheme() == AsymmetricHasherConfig::PRODUCT) {
     DCHECK_EQ(input.size(), model_->centers().size());
     ReconstructProductQuantized(flattend_model_, subspace_sizes_, input,
@@ -353,6 +355,7 @@ Status Indexer<T>::Reconstruct(ConstSpan<uint8_t> input,
 template <typename T>
 Status Indexer<T>::Reconstruct(const DatapointPtr<uint8_t>& input,
                                Datapoint<FloatT>* reconstructed) const {
+  LOG(INFO) << __LINE__ << input.has_values();
   reconstructed->mutable_values()->clear();
   reconstructed->mutable_values()->resize(original_space_dimension());
   return Reconstruct(input.values_slice(),

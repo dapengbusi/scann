@@ -349,13 +349,9 @@ Status TreeAHHybridResidual::BuildLeafSearchers(
         nullptr, std::move(hashed_partition), std::move(opts),
         default_pre_reordering_num_neighbors(),
         default_pre_reordering_epsilon());
-    if (!leaf_searchers_[token]->needs_hashed_dataset()) {
-      leaf_searchers_[token]->ReleaseHashedDataset();
-    }
-    VLOG(1) << "Built leaf searcher " << token + 1 << " of "
-            << datapoints_by_token.size()
-            << " (size = " << datapoints_by_token[token].size() << " DPs) in "
-            << absl::ToDoubleSeconds(absl::Now() - token_start) << " sec.";
+    // if (!leaf_searchers_[token]->needs_hashed_dataset()) {
+    //   leaf_searchers_[token]->ReleaseHashedDataset();
+    // }
   });
   SCANN_RETURN_IF_ERROR(status);
 
@@ -383,6 +379,7 @@ Status TreeAHHybridResidual::FindNeighborsImpl(const DatapointPtr<float>& query,
       params.unlocked_query_preprocessing_results<
           UnlockedTreeAHHybridResidualPreprocessingResults>();
   if (query_preprocessing_results) {
+      LOG(INFO) << "unlocked...";
     return FindNeighborsInternal1(
         query, params, query_preprocessing_results->centers_to_search(),
         result);
@@ -728,6 +725,78 @@ TreeAHHybridResidual::ExtractSingleMachineFactoryOptions() {
     opts.hashed_dataset = leaf_opts.hashed_dataset;
   }
   return opts;
+}
+
+bool TreeAHHybridResidual::AddDatasetWithIdsInternel(const TypedDataset<float>& dataset, const TypedDataset<uint8_t>& hashed_dataset, const std::vector<std::string>& ids, const ScannConfig& config) {
+  auto get_hashed_datapoint =
+    [&](DatapointIndex i, int32_t token,
+        Datapoint<uint8_t>* storage) -> StatusOr<DatapointPtr<uint8_t>> {
+      DatapointPtr<float> original = dataset[i];
+      TF_ASSIGN_OR_RETURN(
+          Datapoint<float> residual,
+          query_tokenizer_->ResidualizeToFloat(original, token,
+            false)); // normalize_residual_by_cluster_stdev
+      //SCANN_RETURN_IF_ERROR(
+      //  leaf_searchers_[token]->GetIndexer()->Hash(residual.ToPtr(), storage));
+      //    //leaf_searchers_[token]->GetIndexer()->HashWithNoiseShaping(residual.ToPtr(), original, storage, 0.2));
+      if (std::isnan(config.hash().asymmetric_hash().noise_shaping_threshold())) {
+        SCANN_RETURN_IF_ERROR(leaf_searchers_[token]->GetIndexer()->Hash(residual.ToPtr(), storage));
+      } else {
+        SCANN_RETURN_IF_ERROR(
+            leaf_searchers_[token]->GetIndexer()->HashWithNoiseShaping(
+              residual.ToPtr(), original, storage,
+              config.hash().asymmetric_hash().noise_shaping_threshold()));
+      }
+      return storage->ToPtr();
+    };
+
+  query_tokenizer_->set_tokenization_mode(UntypedPartitioner::DATABASE);
+  // 每个请求取top1 kmeans token
+  vector<std::vector<DatapointIndex>> datapoints_by_token = {};
+  auto token_status = query_tokenizer_->TokenizeDatabase(
+      dataset, nullptr);
+  query_tokenizer_->set_tokenization_mode(UntypedPartitioner::QUERY);
+  if (!token_status.ok()) {
+    LOG(ERROR) << "token status: " << token_status.status();
+    return false;
+  }
+  datapoints_by_token = token_status.ValueOrDie();
+
+  std::unordered_map<uint32_t, DenseDataset<uint8_t>> token2hasheddataset;
+  Datapoint<uint8_t> hashed_storage;
+  for (auto token : IndicesOf(datapoints_by_token)) {
+    DenseDataset<uint8_t>& hashed_partition = token2hasheddataset[token];
+    if (asymmetric_queryer_->quantization_scheme() ==
+        AsymmetricHasherConfig::PRODUCT_AND_PACK) {
+      hashed_partition.set_packing_strategy(HashedItem::NIBBLE);
+    }
+    for (DatapointIndex dp_index : datapoints_by_token[token]) {
+      //dataset().size() - dataset.size() + i
+      datapoints_by_token_[token].push_back(this->dataset()->size() - dataset.size() + dp_index);
+      auto status_or_hashed_dptr =
+        get_hashed_datapoint(dp_index, token, &hashed_storage);
+      if (!status_or_hashed_dptr.status().ok()) {
+        return false;
+      }
+      auto hashed_dptr = status_or_hashed_dptr.ValueOrDie();
+      auto local_status = hashed_partition.Append(hashed_dptr, "");
+      if (!local_status.ok()) {
+        return false;
+      }
+    }
+  }
+  DenseDataset<float> tmp_dataset;
+  for (const auto& pair : token2hasheddataset) {
+    uint32_t token = pair.first;
+    if (leaf_searchers_.size() > token and leaf_searchers_[token]) {
+      leaf_searchers_[token]->AddDatasetWithIds(tmp_dataset, pair.second, {}, config);
+    } else {
+      LOG(INFO) << "has error" <<  " token:" << token;
+    }
+  }
+  // add 对它的影响
+  //ah_variance_adjustment_by_token_ = std::move(ah_variance_adjustment_by_token);
+  return true;
 }
 
 }  // namespace scann_ops

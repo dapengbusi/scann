@@ -180,6 +180,7 @@ StatusOrSearcherUntyped TreeAhHybridResidualFactory<float>(
         "partitioner.");
   }
 
+  // kmeans 结束 得到kmeans_tree_partitioner
   auto dense = dynamic_pointer_cast<const DenseDataset<float>>(dataset);
   if (dataset && !dense) {
     return InvalidArgumentError(
@@ -195,11 +196,15 @@ StatusOrSearcherUntyped TreeAhHybridResidualFactory<float>(
       dense, params.pre_reordering_num_neighbors,
       params.pre_reordering_epsilon);
 
+  // 为dataset 中每个点找到kmeans center
+  // datapoints_by_token size == kmeans leaves
+  // datapoints_by_token[] 为该类的所有dataset index
   vector<std::vector<DatapointIndex>> datapoints_by_token = {};
   if (dataset && dataset->empty()) {
     datapoints_by_token.resize(kmeans_tree_partitioner->n_tokens());
   } else {
     if (opts->datapoints_by_token) {
+        LOG(INFO) << "opt has datapoint by token: " << datapoints_by_token.size();
       datapoints_by_token = std::move(*opts->datapoints_by_token);
     } else if (dense) {
       TF_ASSIGN_OR_RETURN(datapoints_by_token,
@@ -239,6 +244,7 @@ StatusOrSearcherUntyped TreeAhHybridResidualFactory<float>(
         GetDistanceMeasure(
             config.hash().asymmetric_hash().quantization_distance()));
     TF_ASSIGN_OR_RETURN(
+        // 为dataset 中每个点计算残差
         auto residuals,
         TreeAHHybridResidual::ComputeResiduals(
             *dense, kmeans_tree_partitioner.get(), datapoints_by_token,
@@ -250,6 +256,7 @@ StatusOrSearcherUntyped TreeAhHybridResidualFactory<float>(
 			    "residuals empty "
 			    "database_wildcard or tokenized_database_wildcard must be provided.");
     }
+    // training_opts -> train projector
     asymmetric_hashing2::TrainingOptions<float> training_opts(
         config.hash().asymmetric_hash(), quantization_distance, residuals);
     TF_ASSIGN_OR_RETURN(

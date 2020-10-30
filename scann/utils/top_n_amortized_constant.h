@@ -182,6 +182,7 @@ class TopNeighbors final
     for (size_t i = 0; i < src_size; ++i) {
       dst_ptr[i].first = src_ptr[i].first;
       dst_ptr[i].second = monotonic_transformation(src_ptr[i].second);
+      LOG(INFO) << "write: " << dst_ptr[i].first << "  " << dst_ptr[i].second;
     }
   }
 

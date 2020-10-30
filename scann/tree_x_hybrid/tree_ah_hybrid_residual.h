@@ -75,6 +75,8 @@ class TreeAHHybridResidual final : public SingleMachineSearcherBase<float> {
   StatusOr<SingleMachineFactoryOptions> ExtractSingleMachineFactoryOptions()
       override;
 
+  bool AddDatasetWithIdsInternel(const TypedDataset<float>& dataset, const TypedDataset<uint8_t>& hashed_dataset, const std::vector<std::string>& ids, const ScannConfig& config) override;
+
  protected:
   bool impl_needs_dataset() const final { return leaf_searchers_.empty(); }
 

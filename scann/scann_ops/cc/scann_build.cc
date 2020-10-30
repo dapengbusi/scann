@@ -72,7 +72,7 @@ ScannExt::ScannExt() {
   scann_ = std::make_shared<ScannInterface>();
 }
 
-void ScannExt::BuildIndex(const std::vector<float>& dataset, int dimensionality, const char* config, int conf_length) {
+int ScannExt::BuildIndex(const std::vector<float>& dataset, int dimensionality, const char* config, int conf_length) {
   std::string config_str = std::string(config, conf_length);
 
   std::map<std::string, std::string> conf_map;
@@ -126,6 +126,8 @@ void ScannExt::BuildIndex(const std::vector<float>& dataset, int dimensionality,
     scann_conf.mutable_hash()->mutable_asymmetric_hash()->set_min_cluster_size(100);
     scann_conf.mutable_hash()->mutable_asymmetric_hash()->set_lookup_type(AsymmetricHasherConfig::INT8_LUT16);
     scann_conf.mutable_hash()->mutable_asymmetric_hash()->set_use_residual_quantization(true);
+    scann_conf.mutable_hash()->mutable_asymmetric_hash()->set_quantization_scheme(AsymmetricHasherConfig::PRODUCT);
+    // ah train sample
     scann_conf.mutable_hash()->mutable_asymmetric_hash()->set_expected_sample_size(100000);
     // exact_reordering
     scann_conf.mutable_exact_reordering()->set_approx_num_neighbors(1000);
@@ -177,11 +179,16 @@ void ScannExt::BuildIndex(const std::vector<float>& dataset, int dimensionality,
   LOG(ERROR) << "scann config: " << scann_conf.DebugString();
   ConstSpan<float> ds_span = absl::MakeConstSpan(dataset);
   auto status = scann_->Initialize(ds_span, dimensionality, scann_conf, training_thread_num_);
-  return;
+  LOG(INFO) << status;
+  RuntimeErrorIfNotOk("Error during build: ", status);
+  return 0;
+}
+void ScannExt::AddDocsWithIds(const std::vector<int64_t>& ids, const std::vector<float>& vecs) {
+  scann_->AddDocsWithIds(ids, vecs);
 }
 
-int ScannExt::WriteIndex(const char* filename) {
-  return scann_->WriteIndex(std::string(filename));
+int ScannExt::WriteIndex(const char* filename, bool write_dataset) {
+  return scann_->WriteIndex(std::string(filename), write_dataset);
 }
 
 
@@ -207,7 +214,9 @@ int ScannExt::BuildIndex(const char* conf, int conf_length, const char* codebook
   ConstSpan<int32_t> dp_span = absl::MakeConstSpan(datapoint);
   ConstSpan<uint8_t> hd_span = absl::MakeConstSpan(hashed_dataset);
 
-  scann_->Initialize(config, opts, ds_span, dp_span, hd_span, dimensionality);
+  auto status = scann_->Initialize(config, opts, ds_span, dp_span, hd_span, dimensionality);
+  LOG(INFO) << status;
+  RuntimeErrorIfNotOk("Error during build: ", status);
   return 0;
 }
 

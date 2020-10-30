@@ -1,4 +1,5 @@
 // Copyright 2020 The Google Research Authors.
+// :
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -73,7 +74,9 @@ class ScannInterface {
   size_t n_points() const { return n_points_; }
   DimensionIndex dimensionality() const { return dimensionality_; }
   const ScannConfig* config() const { return &config_; }
+  void AddDocsWithIds(const std::vector<int64_t> &ids, const std::vector<float> &vecs);
 
+ private:
   size_t n_points_;
   DimensionIndex dimensionality_;
   std::unique_ptr<SingleMachineSearcherBase<float>> scann_;

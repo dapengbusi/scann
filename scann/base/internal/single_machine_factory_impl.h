@@ -69,6 +69,7 @@ class SingleMachineFactoryImplClass {
     auto* typed_searcher =
         down_cast<SingleMachineSearcherBase<T>*>(searcher.get());
 
+    // reorder after create searcher
     TF_ASSIGN_OR_RETURN(
         auto reordering_helper,
         ReorderingHelperFactory<T>::Build(config, params.reordering_dist,
@@ -92,6 +93,7 @@ StatusOrSearcherUntyped SingleMachineFactoryUntypedImpl(
     SingleMachineFactoryOptions opts) {
   GenericSearchParameters params;
   SCANN_RETURN_IF_ERROR(params.PopulateValuesFromScannConfig(config));
+  // reordering_dist = scann.exact_reordering.approx_distance_measure()  or  scann.distance_measure
   if (params.reordering_dist->NormalizationRequired() != NONE && dataset &&
       dataset->normalization() !=
           params.reordering_dist->NormalizationRequired()) {

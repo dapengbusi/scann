@@ -28,44 +28,6 @@
 namespace tensorflow {
 namespace scann_ops {
 
-static const std::string kProtoPrefix = "PROTO";
-static const std::string kDataSpanPrefix = "NUMDATA";
-static const std::string kConfigPbName = "scann_config";
-static const std::string kCodeBookPbName = "ah_codebook";
-static const std::string kSerializedPartitionerPbName = "serialized_partitioner";
-static const std::string kDataSetDataName = "dataset";
-static const std::string kDataPointDataName = "datapoint";
-static const std::string kHashedDataDataName = "hasheddata";
-
-static Status AppendProtobufToFile(const std::string& pb_name,
-                           google::protobuf::Message* message,
-                           std::ofstream* fout) {
-  std::string pb_str;
-  if (!message->SerializeToString(&pb_str)) {
-    return InternalError("Failed to write " + pb_name);
-  }
-
-  int length = pb_str.length();
-  std::string header = kProtoPrefix + ":" + pb_name + ":" + std::to_string(length) + "\n";
-  *fout << header;
-  *fout << pb_str;
-  *fout << "\n";
-  return OkStatus();
-}
-
-template <typename T>
-static Status AppendDataToFile(const std::string& data_name,
-                   ConstSpan<T> data,
-                   std::ofstream* fout) {
-  std::string header = kDataSpanPrefix + ":" + data_name + ":" + std::to_string(data.size()*sizeof(T)) + "\n";
-  *fout << header;
-  const char* ptr = reinterpret_cast<const char*>(data.data());
-  fout->write(ptr, data.size()*sizeof(T));
-  *fout << "\n";
-  return OkStatus();
-}
-
-
 Status ScannInterface::Initialize(ConstSpan<float> dataset,
                                   ConstSpan<int32_t> datapoint_to_token,
                                   ConstSpan<uint8_t> hashed_dataset,
@@ -97,17 +59,17 @@ Status ScannInterface::Initialize(ScannConfig config,
                                   ConstSpan<uint8_t> hashed_dataset,
                                   DimensionIndex dimensionality) {
   config_ = config;
-  if (opts.ah_codebook != nullptr) {
+  if (opts.ah_codebook != nullptr && !hashed_dataset.empty()) {
     vector<uint8_t> hashed_db(hashed_dataset.data(),
                               hashed_dataset.data() + hashed_dataset.size());
     int n_points = dataset.size() / dimensionality;
     opts.hashed_dataset =
         std::make_shared<DenseDataset<uint8_t>>(hashed_db, n_points);
   }
-  if (opts.serialized_partitioner != nullptr) {
+  if (opts.serialized_partitioner != nullptr && !datapoint_to_token.empty()) {
     if (datapoint_to_token.size() * dimensionality != dataset.size())
       return InvalidArgumentError(
-          "Sizes of datapoint_to_token and dataset are inconsistent");
+          "Sizes of datapoint_to_token and dataset are inconsistent: dim " + std::to_string(dimensionality) + " dataset: " + std::to_string(dataset.size()));
     opts.datapoints_by_token =
         std::make_shared<vector<std::vector<DatapointIndex>>>(
             opts.serialized_partitioner->n_tokens());
@@ -150,7 +112,10 @@ Status ScannInterface::Initialize(ConstSpan<float> dataset,
 Status ScannInterface::Initialize(ConstSpan<float> ds_span,
                                   DimensionIndex dimensionality,
                                   SingleMachineFactoryOptions opts) {
-  if (ds_span.empty()) return InvalidArgumentError("Dataset must be non-empty");
+  // if (ds_span.empty()) {
+  //     LOG(INFO) << "dataset is empty";
+  //     return InvalidArgumentError("Dataset must be non-empty");
+  // }
 
   dimensionality_ = dimensionality;
   n_points_ = ds_span.size() / dimensionality_;
@@ -175,11 +140,28 @@ Status ScannInterface::Initialize(ConstSpan<float> ds_span,
   return OkStatus();
 }
 
+void ScannInterface::AddDocsWithIds(const std::vector<int64_t> &ids, const std::vector<float> &vecs) {
+  auto n_points = ids.size();
+  n_points_ += n_points;
+
+  DenseDataset<uint8_t> hashed_dataset;
+  auto dataset = absl::make_unique<DenseDataset<float>>(vecs, n_points);
+  std::vector<std::string> idstr_vec (ids.size(), "");
+  for (auto id : ids) {
+    //idstr_vec.push_back(std::to_string(id));
+  }
+  auto ret = scann_->AddDatasetWithIds(*dataset, hashed_dataset, idstr_vec, config_);
+  if (!ret) {
+    LOG(ERROR) << "add has error";
+  }
+}
+
 Status ScannInterface::Search(const DatapointPtr<float> query,
                               NNResultsVector* res, int final_nn,
                               int pre_reorder_nn, int leaves) const {
-  if (query.dimensionality() != dimensionality_)
+  if (query.dimensionality() != dimensionality_) {
     return InvalidArgumentError("Query doesn't match dataset dimsensionality");
+  }
   bool has_reordering =
       config_.has_exact_reordering() || config_.has_compressed_reordering();
   int post_reorder_nn = -1;
@@ -280,6 +262,43 @@ Status ScannInterface::Serialize(std::string path) {
   return OkStatus();
 }
 
+static const std::string kProtoPrefix = "PROTO";
+static const std::string kDataSpanPrefix = "NUMDATA";
+static const std::string kConfigPbName = "scann_config";
+static const std::string kCodeBookPbName = "ah_codebook";
+static const std::string kSerializedPartitionerPbName = "serialized_partitioner";
+static const std::string kDataSetDataName = "dataset";
+static const std::string kDataPointDataName = "datapoint";
+static const std::string kHashedDataDataName = "hasheddata";
+
+static Status AppendProtobufToFile(const std::string& pb_name,
+                           google::protobuf::Message* message,
+                           std::ofstream* fout) {
+  std::string pb_str;
+  if (!message->SerializeToString(&pb_str)) {
+    return InternalError("Failed to write " + pb_name);
+  }
+
+  int length = pb_str.length();
+  std::string header = kProtoPrefix + ":" + pb_name + ":" + std::to_string(length) + "\n";
+  *fout << header;
+  *fout << pb_str;
+  *fout << "\n";
+  return OkStatus();
+}
+
+template <typename T>
+static Status AppendDataToFile(const std::string& data_name,
+                   ConstSpan<T> data,
+                   std::ofstream* fout) {
+  std::string header = kDataSpanPrefix + ":" + data_name + ":" + std::to_string(data.size()*sizeof(T)) + "\n";
+  *fout << header;
+  const char* ptr = reinterpret_cast<const char*>(data.data());
+  fout->write(ptr, data.size()*sizeof(T));
+  *fout << "\n";
+  return OkStatus();
+}
+
 int ScannInterface::WriteIndex(std::string filename, bool write_dataset) {
   try {
     std::ofstream file(filename, std::ofstream::binary);
@@ -301,17 +320,17 @@ int ScannInterface::WriteIndex(std::string filename, bool write_dataset) {
       AppendProtobufToFile(kCodeBookPbName, opts.ah_codebook.get(), &file);
     if (opts.serialized_partitioner != nullptr)
       AppendProtobufToFile(kSerializedPartitionerPbName, opts.serialized_partitioner.get(), &file);
-    if (opts.datapoints_by_token != nullptr) {
-      vector<int32_t> datapoint_to_token(n_points_);
-      for (const auto& [token_idx, dps] : Enumerate(*opts.datapoints_by_token))
-        for (auto dp_idx : dps) datapoint_to_token[dp_idx] = token_idx;
-
-      AppendDataToFile(kDataPointDataName, ConstSpan<int32_t>(datapoint_to_token.data(), datapoint_to_token.size()), &file);
-    }
-    if (opts.hashed_dataset != nullptr) {
-      AppendDataToFile(kHashedDataDataName, ConstSpan<uint8_t>((*opts.hashed_dataset).data()), &file);
-    }
     if (write_dataset) {
+      if (opts.datapoints_by_token != nullptr) {
+        vector<int32_t> datapoint_to_token(n_points_);
+        for (const auto& [token_idx, dps] : Enumerate(*opts.datapoints_by_token))
+          for (auto dp_idx : dps) datapoint_to_token[dp_idx] = token_idx;
+
+        AppendDataToFile(kDataPointDataName, ConstSpan<int32_t>(datapoint_to_token.data(), datapoint_to_token.size()), &file);
+      }
+      if (opts.hashed_dataset != nullptr) {
+        AppendDataToFile(kHashedDataDataName, ConstSpan<uint8_t>((*opts.hashed_dataset).data()), &file);
+      }
       auto data = down_cast<const DenseDataset<float>*>(scann_->dataset())->data();
       if (data.empty()) {
         LOG(ERROR) << "can not get dataset";

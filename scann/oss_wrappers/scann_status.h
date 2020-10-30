@@ -40,7 +40,8 @@
   return RetCheckFail("SCANN_RET_CHECK_LE failure ")
 
 #define SCANN_RETURN_IF_ERROR(...) \
-  while (ABSL_PREDICT_FALSE(!(__VA_ARGS__).ok())) return InternalErrorBuilder()
+  while (ABSL_PREDICT_FALSE(!(__VA_ARGS__).ok())) return InternalErrorBuilder() << (__VA_ARGS__).code() << (__VA_ARGS__).error_message()
+  //while (ABSL_PREDICT_FALSE(!(__VA_ARGS__).ok())) return AnnotateStatus((__VA_ARGS__).OK(), "internel:")
 
 #define SCANN_LOG_NOOP(...) \
   while (false) LOG(ERROR)

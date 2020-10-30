@@ -128,10 +128,16 @@ class Searcher final : public SingleMachineSearcherBase<T> {
     return optimal_low_level_batch_size_;
   }
 
+  shared_ptr<const Indexer<T>> GetIndexer() {
+    return opts_.indexer_;
+  }
+
   using MutationMetadata = UntypedSingleMachineSearcherBase::MutationMetadata;
 
   StatusOr<SingleMachineFactoryOptions> ExtractSingleMachineFactoryOptions()
       override;
+
+  bool AddDatasetWithIdsInternel(const TypedDataset<T>& dataset, const TypedDataset<uint8_t>& hashed_dataset, const std::vector<std::string>& ids, const ScannConfig& config) override; 
 
  protected:
   Status FindNeighborsImpl(const DatapointPtr<T>& query,

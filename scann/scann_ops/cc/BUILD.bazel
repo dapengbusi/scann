@@ -42,6 +42,21 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_binary(
+    name = "scann_test",
+    srcs = [
+                   "scann_index_test.cpp",
+                   "scann_test.cpp",
+                   'scann_index_test.h',
+                   'scann_build.h',
+            ],
+    tags = ["local"],
+    deps = [
+       ":scann",
+       ":scann_ext",
+    ],
+)
+
 cc_library(
     name = "scann_ops_kernels",
     srcs = [

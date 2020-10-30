@@ -378,6 +378,7 @@ StatusOr<vector<std::vector<SubspaceResidualStats>>> ComputeResidualStats(
 
   for (size_t subspace_idx : Seq(num_subspaces)) {
     auto& cur_subspace_residual_stats = residual_stats[subspace_idx];
+    //LOG(INFO) << num_clusters_per_block;
     cur_subspace_residual_stats.resize(num_clusters_per_block);
     const DenseDataset<FloatingTypeFor<T>>& cur_subspace_centers =
         centers[subspace_idx];

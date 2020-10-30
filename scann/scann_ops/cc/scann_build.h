@@ -18,14 +18,15 @@ class ScannExt {
   ScannExt();
   void Search(long n, const std::vector<float> &vecs, long k, std::vector<float> &distances,
               std::vector<int64_t> &labels);
-  void BuildIndex(const std::vector<float>& dataset, int dimensionality, const char* config, int conf_length);
+  int BuildIndex(const std::vector<float>& dataset, int dimensionality, const char* config, int conf_length);
   int BuildIndex(const char* conf_str, int conf_length, const char* codebook_str, int code_length,
                  const char* partition_str, int partition_length,
 		 const std::vector<float>& data_set,
                  const std::vector<int32_t>& datapoint,
                  const std::vector<uint8_t>& hashed_dataset,
                  int dimensionality);
-  int WriteIndex(const char* file);
+  int WriteIndex(const char* file, bool write_dataset = true);
+  void AddDocsWithIds(const std::vector<int64_t> &ids, const std::vector<float> &vecs);
  private:
   int nprobe_ = -1;
   int training_thread_num_ = 2;

@@ -442,6 +442,8 @@ DenseDataset<T>::DenseDataset(vector<T> datapoint_vec,
                               unique_ptr<DocidCollectionInterface> docids)
     : TypedDataset<T>(std::move(docids)), data_(std::move(datapoint_vec)) {
   if (!data_.empty()) {
+    // stride == dimension
+    // docids size == data count
     stride_ = data_.size() / this->docids()->size();
 
     this->set_dimensionality_no_checks(stride_);

@@ -195,9 +195,11 @@ Status Searcher<T>::FindNeighborsBatchedImpl(
   if (opts_.symmetric_queryer_ || !lut16_ || limited_inner_product_ ||
       crowding_enabled_for_any_query ||
       opts_.quantization_scheme() == AsymmetricHasherConfig::PRODUCT_AND_BIAS) {
+      LOG(INFO) << "base search";
     return SingleMachineSearcherBase<T>::FindNeighborsBatchedImpl(
         queries, params, results);
   }
+      LOG(INFO) << "internal search";
   return FindNeighborsBatchedInternal<
       asymmetric_hashing_internal::IdentityPostprocessFunctor>(
       [&queries](DatapointIndex i) { return queries[i]; }, params,
@@ -253,7 +255,9 @@ Status Searcher<T>::FindNeighborsQueryerDispatcher(
   }
   queryer_options.hashed_dataset = hashed_dataset_view;
   queryer_options.postprocessing_functor = std::move(postprocessing_functor);
-  if (lut16_) queryer_options.lut16_packed_dataset = &packed_dataset_;
+  if (lut16_) {
+      queryer_options.lut16_packed_dataset = &packed_dataset_;
+  }
   if (opts_.symmetric_queryer_) {
     Datapoint<uint8_t> hashed_query;
     SCANN_RETURN_IF_ERROR(opts_.indexer_->Hash(query, &hashed_query));
@@ -426,6 +430,61 @@ template Status Searcher<float>::FindNeighborsBatchedInternal<
     asymmetric_hashing_internal::IdentityPostprocessFunctor
         postprocessing_functor,
     MutableSpan<NNResultsVector> results) const;
+
+template <typename T>
+bool Searcher<T>::AddDatasetWithIdsInternel(const TypedDataset<T>& dataset, const TypedDataset<uint8_t>& hashed_dataset, const std::vector<std::string>& ids, const ScannConfig& config) {
+  if (lut16_) {
+    packed_dataset_ =
+      ::tensorflow::scann_ops::asymmetric_hashing2::CreatePackedDataset(
+          *this->hashed_dataset());
+
+    const size_t l2_cache_bytes = 256 * 1024;
+    if (packed_dataset_.bit_packed_data.size() <= l2_cache_bytes / 2) {
+      optimal_low_level_batch_size_ = 3;
+      max_low_level_batch_size_ = 3;
+    } else {
+      if (RuntimeSupportsAvx2()) {
+        if (packed_dataset_.num_blocks <= 300) {
+          optimal_low_level_batch_size_ = 7;
+        } else {
+          optimal_low_level_batch_size_ = 5;
+        }
+      } else {
+        if (packed_dataset_.num_blocks <= 300) {
+          optimal_low_level_batch_size_ = 6;
+        } else {
+          optimal_low_level_batch_size_ = 5;
+        }
+      }
+    }
+  }
+
+  if (opts_.quantization_scheme() == AsymmetricHasherConfig::PRODUCT_AND_BIAS) {
+    LOG(ERROR) << "opts quantization scheme == product_and bias";
+    if (!hashed_dataset.empty()) {
+      const int dim = hashed_dataset.at(0).nonzero_entries();
+      for (int i = 0; i < hashed_dataset.size(); i++) {
+        const float bias = strings::KeyToFloat(string_view(
+              reinterpret_cast<const char*>(hashed_dataset[i].values() + dim -
+                sizeof(float)),
+              sizeof(float)));
+        bias_.push_back(-bias);
+      }
+    }
+  }
+
+  if (limited_inner_product_) {
+    CHECK(opts_.indexer_) << "Indexer must be non-null if "
+      "limited inner product searcher is being used.";
+    for (DatapointIndex dp_idx : Seq(hashed_dataset.size())) {
+      Datapoint<FloatingTypeFor<T>> dp;
+      TF_CHECK_OK(opts_.indexer_->Reconstruct(hashed_dataset[dp_idx], &dp));
+      double norm = SquaredL2Norm(dp.ToPtr());
+      norm_inv_.push_back(static_cast<float>(norm == 0 ? 0 : 1 / sqrt(norm)));
+    }
+  }
+  return true;
+}
 
 SCANN_INSTANTIATE_TYPED_CLASS(, SearcherOptions);
 SCANN_INSTANTIATE_TYPED_CLASS(, Searcher);

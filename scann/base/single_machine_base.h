@@ -52,6 +52,10 @@ class UntypedSingleMachineSearcherBase {
     return hashed_dataset_.get();
   }
 
+  DenseDataset<uint8_t>* mutable_hashed_dataset() const {
+    return const_cast<DenseDataset<uint8_t>*>(hashed_dataset_.get());
+  }
+
   shared_ptr<const DenseDataset<uint8_t>> shared_hashed_dataset() const {
     return hashed_dataset_;
   }
@@ -69,7 +73,8 @@ class UntypedSingleMachineSearcherBase {
   int64_t creation_timestamp() const { return creation_timestamp_; }
   void set_creation_timestamp(int64_t x) { creation_timestamp_ = x; }
 
-  virtual bool needs_dataset() const { return true; }
+  //virtual bool needs_dataset() const { return true; }
+  virtual bool needs_dataset() const { return false; }
 
   bool needs_hashed_dataset() const;
 
@@ -306,6 +311,8 @@ class SingleMachineSearcherBase : public UntypedSingleMachineSearcherBase {
 
   const TypedDataset<T>* dataset() const final { return dataset_.get(); }
 
+  TypedDataset<T>* mutable_dataset() { return const_cast<TypedDataset<T>*>(dataset_.get()); }
+
   shared_ptr<const TypedDataset<T>> shared_dataset() const { return dataset_; }
 
   void ReleaseDataset() final;
@@ -366,6 +373,12 @@ class SingleMachineSearcherBase : public UntypedSingleMachineSearcherBase {
   const ReorderingInterface<T>& reordering_helper() const {
     return *reordering_helper_;
   }
+  virtual bool AddDatasetWithIds(const TypedDataset<T>& dataset, const TypedDataset<uint8_t>& hashed_dataset, const std::vector<std::string>& ids, const ScannConfig& config);
+
+  virtual bool AddDatasetWithIdsInternel(const TypedDataset<T>& dataset, const TypedDataset<uint8_t>& hashed_dataset, const std::vector<std::string>& ids, const ScannConfig& config) {
+    LOG(INFO) << "base search dont need add internal";
+    return true;
+  }
 
   class Mutator : public UntypedSingleMachineSearcherBase::UntypedMutator {
    public:
@@ -385,14 +398,17 @@ class SingleMachineSearcherBase : public UntypedSingleMachineSearcherBase {
 
     virtual StatusOr<DatapointIndex> AddDatapoint(const DatapointPtr<T>& dptr,
                                                   string_view docid,
-                                                  MutationMetadata* md) = 0;
+                                                  MutationMetadata* md) {
+    }
 
     virtual StatusOr<DatapointIndex> UpdateDatapoint(
         const DatapointPtr<T>& dptr, string_view docid,
-        MutationMetadata* md) = 0;
+        MutationMetadata* md) {
+    }
     virtual StatusOr<DatapointIndex> UpdateDatapoint(
         const DatapointPtr<T>& dptr, DatapointIndex index,
-        MutationMetadata* md) = 0;
+        MutationMetadata* md) {
+    }
 
     bool LookupDatapointIndex(string_view docid,
                               DatapointIndex* index) const override;
@@ -420,6 +436,9 @@ class SingleMachineSearcherBase : public UntypedSingleMachineSearcherBase {
     }
 
     Status PrepareForBaseMutation(SingleMachineSearcherBase<T>* searcher);
+    void Reserve(size_t size) final {};
+    Status RemoveDatapoint(string_view docid) final {};
+    Status RemoveDatapoint(DatapointIndex index) final {};
 
    protected:
     StatusOr<DatapointIndex> AddDatapointToBase(
@@ -453,11 +472,14 @@ class SingleMachineSearcherBase : public UntypedSingleMachineSearcherBase {
     DocidCollectionInterface::Mutator* docid_mutator_ = nullptr;
 
     typename ReorderingInterface<T>::Mutator* reordering_mutator_ = nullptr;
+    friend class SingleMachineSearcherBase;
   };
 
   virtual StatusOr<typename SingleMachineSearcherBase::Mutator*> GetMutator()
       const {
-    return FailedPreconditionError("Cannot be dynamically updated.");
+    //return FailedPreconditionError("Cannot be dynamically updated.");
+    static SingleMachineSearcherBase::Mutator mutator;
+    return &mutator;
   }
   StatusOr<typename UntypedSingleMachineSearcherBase::UntypedMutator*>
   GetUntypedMutator() const final {

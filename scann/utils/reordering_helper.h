@@ -103,7 +103,8 @@ class ExactReorderingHelper : public ReorderingHelper<T> {
 
   std::string name() const override { return "ExactReordering"; }
 
-  bool needs_dataset() const override { return true; }
+  //bool needs_dataset() const override { return true; }
+  bool needs_dataset() const override { return false; }
 
   Status ComputeDistancesForReordering(const DatapointPtr<T>& query,
                                        NNResultsVector* result) const override;
